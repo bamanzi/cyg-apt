@@ -592,8 +592,10 @@ class CygApt:
     def split_ball(self, p):
         m = re.match('^(.*)-([0-9].*-[0-9]+)(.tar.bz2)?$', p)
         if not m:
-            print 'split_ball: ' + p
-            return (p[:2], (0, 0))
+            m = re.match('^(.*)-([0-9].*-[0-9]+)(.tar.xz)?$', p)
+            if not m:
+                print 'split_ball: ' + p
+                return (p[:2], (0, 0))
         t = (m.group(1), self.string_to_version(m.group(2)))
         return t
     
@@ -1073,6 +1075,7 @@ class CygApt:
         members = tf.getmembers()
         tempdir = os.path.basename(tf.name) + "-tmp"
         tempdir = tempdir.replace(".tar.bz2","")
+        tempdir = tempdir.replace(".tar.xz","")        
         if os.path.exists(tempdir):
             print >> sys.stderr,\
             "%s: tmpdir %s exists, won't overwrite.\nInstall "\
@@ -1142,9 +1145,18 @@ class CygApt:
                     else:
                         lst.append(m.name)
         else:
-            print >> sys.stderr,\
-            "%s: bad tarball %s. Install failed." % (self.sn, ball)
-            return
+            # python's 'tarfile' module doesn't support xz/lzma etc,
+            # thus we have to use external command line
+            parts = os.path.splitext(ball)
+            if len(parts)>1 and parts[1]=='.xz':
+                from subprocess import Popen, PIPE
+                p1 = Popen(['tar', 'x', '-v', '--xz', '--directory', '/', '-f', ball], stdout=PIPE)
+                lst = p1.stdout.readlines()
+                p1.stdout.close()
+            else:
+                print >> sys.stderr,\
+                    "%s: bad tarball %s. Install failed." % (self.sn, ball)
+                return
         self.write_filelist(lst)
         self.installed[0][self.packagename] = os.path.basename(ball)
         self.write_installed()
@@ -1392,7 +1404,7 @@ class CygApt:
     def do_unpack(self):
         ball = self._get_ball()
         basename = os.path.basename(ball)
-        self.packagename = re.sub('(-src)*\.tar\.(bz2|gz)', '', basename)
+        self.packagename = re.sub('(-src)*\.tar\.(bz2|xz|gz)', '', basename)
         if os.path.exists(self.packagename):
             self.printerr(self.packagename + " already exists. Not overwriting.\n")
             return 1       
