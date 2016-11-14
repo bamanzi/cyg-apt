@@ -1,22 +1,34 @@
 #!/usr/bin/python
 # -*- mode:python -*-
-'''
-  cyg-apt - a Cygwin package manager.
+'''cyg-apt - a Cygwin package manager.
   
   (c) 2002--2009 Chris Cormie         Jan Nieuwenhuizen
                  <cjcormie@gmail.com> <janneke@gnu.org> 
   
   License: GNU GPL
 
-  Hacked by Ba Manzi <bamanzi@gmail.com> 2012
+  Hacked by Ba Manzi <bamanzi@gmail.com> 2012-2016
+
   - disable gpg verifing by default
-  - disable automatically updating of setup.ini (rc & cmd option 'always_update'
-    changed to 'auto_update', and disabled by default). you can manually call
-    'cyg-apt update' to update them
-  - support multi-repos (e.g. Cygwin Ports). You need to add `mirrors' (in
-    python dictionary format) to ~/.cyg-apt, and it would overrides 'mirror' option
-    (but cmdline '--mirror' has higher priority).
-    Note: /etc/setup/setup.ini no longer used nor updated by this program.
+
+  - disable automatically updating of setup.ini
+
+    rc & cmd option 'always_update' changed to 'auto_update', and
+    disabled by default. you can manually call 'cyg-apt update' to
+    update them
+
+  - support multi-repos (e.g. Cygwin Ports).
+
+    You need to add `mirrors' (in python dictionary format) to
+    ~/.cyg-apt, and it would overrides 'mirror' option (but cmdline
+    '--mirror' has higher priority).  Note: /etc/setup/setup.ini no
+    longer used nor updated by this program.
+
+  - add support for different arch (x86 or x86_64)
+
+    required to work with repository later than Aug,2013. If you want
+    to install package from old repository, set it to empty string.
+
 '''
 
 import getopt
@@ -32,15 +44,16 @@ import hashlib
 import shutil
 import inspect
 import bz2
-from pdb import set_trace as stra
+import platform
 
+from pdb import set_trace as stra
 
 class CygAptSetup:
     def __init__(self, cygwin_p):
         self.cygwin_p = cygwin_p
         self.rc_options = ['ROOT', 'mirror', 'cache', 'setup_ini', 'distname',\
             'barred', 'auto_update', 'arch']
-        self.rc_comments = {\
+        self.rc_comments = {
             "ROOT"     : "# The root of your Cygwin installation as a windows path\n",
             "mirror"   : "# URL of your Cygwin mirror: example "\
                 "http://mirror.internode.on.net/pub/cygwin/\n",
@@ -62,7 +75,8 @@ class CygAptSetup:
             "auto_update" : "# Auto update setup.ini before install any package (default: False).\n"\
                 "# IF set to False, you need to manually call 'cyg-apt update' to update setup.ini.\n",
             "arch" : "# x86 or x86_64, used to find the setup.ini and local cache folder. \n"\
-                "# required after 2013-07-22 (default: x86).\n"\
+                            "# required by repositories after 2013-07-22 (default: x86).\n"
+                            "# To work with old repository, set it to empty string.\n"
             }
         self.sn = os.path.basename(sys.argv[0])
         self.rc_regex = re.compile("^\s*(\w+)\s*=\s*(.*)\s*$")
@@ -172,11 +186,11 @@ class CygAptSetup:
         for m in inspect.getmembers(CygAptSetup):
             if (type(m[1]) == type(self.usage)) and not m[0].startswith('_'):
                 if m[1].__doc__:
-                    print "    " + m[0] + " - " + m[1].__doc__        
+                    print "   %10s - %s " % (m[0], m[1].__doc__)
         for m in inspect.getmembers(CygApt):
             if (type(m[1]) == type(self.usage)) and not m[0].startswith('_'):
                 if m[1].__doc__:
-                    print "    " + m[0] + " - " + m[1].__doc__
+                    print "   %10s - %s " % (m[0], m[1].__doc__)
         sys.stdout.write(r'''
     Options:
         -d, --download          download only
@@ -217,6 +231,9 @@ class CygAptSetup:
             else:
                 mirrors = { 'offcial': rc["mirror"] }
 
+                
+        if not rc.has_key('arch'):
+            rc['arch'] = main_arch
         arch = rc["arch"]
         for mirror_id, mirror in mirrors.items():
             downloads = os.path.join(pm.map_path(rc["cache"]), urllib.quote(mirror, '').lower(), arch)
@@ -258,7 +275,7 @@ class CygAptSetup:
 
             if verify:
                 sig_name = setup_ini_name + ".sig"
-                sig_url = os.path.join(mirror, sig_name)
+                sig_url = os.path.join(mirror, rc['arch'], sig_name)
                 err = uri_get(self.tmpdir, sig_url, verbose=True)
                 if err:
                     print >> sys.stderr,\
@@ -490,7 +507,9 @@ class CygApt:
         main_nopostremove,\
         main_dists,\
         main_installed,\
-        main_scriptname):
+        main_scriptname,\
+        main_arch):
+
         
         # Define constants
         self.installed_db_magic = 'INSTALLED.DB 2\n'
@@ -520,9 +539,9 @@ class CygApt:
         self.dists = main_dists
         self.installed = main_installed
         self.cyg_apt_rc = main_cyg_apt_rc
+        self.arch = main_arch
         self.mirror = ''
         self.mirrors = {}
-        self.arch = "x86"
         
         # Read in our configuration
         self.get_rc(open(self.cyg_apt_rc))
@@ -997,7 +1016,7 @@ class CygApt:
             print "%s: not found in setup.ini: %s" % (self.sn, s)
 
     def showpkg(self):
-        ''' show detail info '''
+        '''show detail info about package(s)'''
         self.show()
         
         package = self.dists[self.distname][self.packagename]
@@ -1526,7 +1545,9 @@ def main():
     home_cyg_apt_rc = None
     main_verify = False
     main_autoupdate = False
-    
+
+    main_arch = "x86" if (platform.architecture()[0] == '32bit') else "x86_64"
+
     main_cygwin_p = (sys.platform == "cygwin")
     cas = CygAptSetup(main_cygwin_p)
     update_not_needed = ["ball", "find", "help", "purge", "remove", "version",\
@@ -1629,7 +1650,8 @@ def main():
                 main_nopostremove,\
                 main_dists,\
                 main_installed,\
-                main_scriptname)
+                             main_scriptname,
+                             main_arch)
         except CygAptError, exp:
             print exp
             sys.exit(1)
