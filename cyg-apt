@@ -370,7 +370,7 @@ def uri_get(dir, uri, verbose=True):
         shutil.copy(uri[7:], dir)
         if verbose:
             print "cp %s %s" % (uri[7:], dir)
-        #ret = 0
+        ret = 0
     elif up.scheme == "http" or up.scheme == "ftp":
         url_base = os.path.basename(up.path)
         old_cwd = os.getcwd()
@@ -383,18 +383,21 @@ def uri_get(dir, uri, verbose=True):
         except IOError,e:
             opener.errcode = 1
             err = e
+            
         if (opener.errcode == 200):
             rename(url_base + ".tmp", url_base)
-            #ret = 0
+            ret = 0
         else:
             if os.path.exists(url_base + ".tmp"):
                 os.remove(url_base + ".tmp")
             os.chdir(old_cwd)
-            raise CygAptError("failed to download from %s: %s" % (uri, err))
+            if verbose:
+                 print("failed to download from %s: [errcode=%s]: %s" % (uri, opener.errcode, err))
         os.chdir(old_cwd)
+        ret = opener.errcode
     else:
-        raise CygAptError("bad URL %s" % uri)
-        
+        raise CygAptError("unsupported URL scheme %s: %s" % (up.scheme, uri))
+    return ret    
 
 def prsort(lst):
     lst.sort()
@@ -762,10 +765,8 @@ class CygApt:
                 os.makedirs(dir)
             status = uri_get(dir, '%s/%s' % (self.mirrors[mirror_id], install))
             if status:
-                sys.stderr.write("\n%s: didn't find %s on mirror %s: " \
-                                     "possible mismatch between setup.ini and "\
-                                     "mirror requiring %s update?"\
-                                     % (self.sn, self.packagename, self.mirrors[mirror_id], self.sn))
+                sys.stderr.write("\n%s: failed to download %s from mirror %s: errcode=%s"
+                                     % (self.sn, self.packagename, self.mirrors[mirror_id], status))
                 sys.exit(1)
                     
 
