@@ -31,6 +31,7 @@
 
   - add support for .xz tar ball
 
+  - add support for verification of sha256/sha512 hashes
 '''
 
 import getopt
@@ -949,6 +950,10 @@ class CygApt:
         install, md5, mirror_id = self._get_url()
         f = file("%s/%s" % (self.downloads[mirror_id], install),"rb").read()
         m = hashlib.md5()
+        if 64 == len(md5):
+            m = hashlib.sha256()
+        elif 128 == len(md5):
+            m = hashlib.sha512()
         m.update(f)
         digest = m.hexdigest()
         return digest
