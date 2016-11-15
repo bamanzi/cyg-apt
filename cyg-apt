@@ -49,9 +49,9 @@ import inspect
 import bz2
 import platform
 
-from pdb import set_trace as stra
+#from pdb import set_trace as stra
 
-main_arch = "x86" if (platform.architecture()[0] == '32bit') else "x86_64"
+sys_arch = "x86" if (platform.architecture()[0] == '32bit') else "x86_64"
 
 class CygAptSetup:
     def __init__(self, cygwin_p):
@@ -159,7 +159,7 @@ class CygAptSetup:
         cygwin_version = os.uname()[2][:3]
         self.setup_ini = self.config + "/setup.ini"
         self.cygwin_version = float(cygwin_version)
-        distname = "curr"
+
         h = open(self.cyg_apt_rc, "w")
         for i in self.rc_options:
             if i in self.rc_comments.keys():
@@ -176,7 +176,7 @@ class CygAptSetup:
             os.makedirs(self.config)
         if not os.path.isfile(installed_db):
             sys.stderr.write('creating %s\n' % installed_db)
-            installed = {0:{}}
+            self.installed = {0:{}}
             self.write_installed()
         #if not os.path.isfile(self.setup_ini):
         #    sys.stderr.write('getting %s\n' % self.setup_ini)
@@ -238,7 +238,7 @@ class CygAptSetup:
 
                 
         if not rc.has_key('arch'):
-            rc['arch'] = main_arch
+            rc['arch'] = sys_arch
         arch = rc["arch"]
         for mirror_id, mirror in mirrors.items():
             downloads = os.path.join(pm.map_path(rc["cache"]), urllib.quote(mirror, '').lower(), arch)
@@ -370,7 +370,7 @@ def uri_get(dir, uri, verbose=True):
         shutil.copy(uri[7:], dir)
         if verbose:
             print "cp %s %s" % (uri[7:], dir)
-        ret = 0
+        #ret = 0
     elif up.scheme == "http" or up.scheme == "ftp":
         url_base = os.path.basename(up.path)
         old_cwd = os.getcwd()
@@ -379,14 +379,13 @@ def uri_get(dir, uri, verbose=True):
         if verbose:
             print "\r%s: downloading: %s" % (scriptname, uri)
         try:
-            result = opener.retrieve\
-                (uri, url_base + ".tmp", reporthook = opener.dlProgress)
+            opener.retrieve(uri, url_base + ".tmp", reporthook = opener.dlProgress)
         except IOError,e:
             opener.errcode = 1
             err = e
         if (opener.errcode == 200):
             rename(url_base + ".tmp", url_base)
-            ret = 0
+            #ret = 0
         else:
             if os.path.exists(url_base + ".tmp"):
                 os.remove(url_base + ".tmp")
@@ -575,11 +574,15 @@ class CygApt:
         if (main_distname):
             self.distname = main_distname
 
-        if not (os.path.isfile(self.installed_db) or os.path.isfile(self.setup_ini)):
+        if not os.path.isfile(self.installed_db):
             sys.stderr.write('\n')
-            sys.stderr.write('error: \"%s\" no such file\n' % i)
+            sys.stderr.write('error: no such file \"%s\"\n' % self.installed_db)
             sys.stderr.write('error: run cyg-apt setup?\n' % vars())
             sys.exit(2)
+        elif not os.path.isfile(self.setup_ini):
+            sys.stderr.write('\n')
+            sys.stderr.write('error: no such file \"%s\"\n' % self.setup_ini)
+            sys.stderr.write('error: run cyg-apt setup?\n' % vars())
         else:
             self._parse_setup_inis()
             self._parse_installed_db()
@@ -1180,7 +1183,7 @@ class CygApt:
                 from subprocess import Popen, PIPE
                 p1 = Popen('tar', 'xv', '--xz', '--directory', '/', '-f', ball, stdout=PIPE)
                 lst = p1.stdout.readlines()
-                p.stdout.close()
+                p1.stdout.close()
             else:
                 print >> sys.stderr,\
                     "%s: bad tarball %s. Install failed." % (self.sn, ball)
@@ -1432,7 +1435,7 @@ class CygApt:
     def do_unpack(self):
         ball = self._get_ball()
         basename = os.path.basename(ball)
-        self.packagename = re.sub('(-src)*\.tar\.(bz2|xz|gz)', '', basename)
+        self.packagename = re.sub('(-src)*\.tar\.(bz2|xz|gz)', '', basename)  #FIXME: xz support (module `tarfile' doesn't support it)
         if os.path.exists(self.packagename):
             self.printerr(self.packagename + " already exists. Not overwriting.\n")
             return 1       
@@ -1440,11 +1443,11 @@ class CygApt:
         if tarfile.is_tarfile(ball):
             tf = tarfile.open(ball)
             tf.extractall(self.packagename)
-            lst = tf.getnames()
+            #lst = tf.getnames()
         else:
             print >> sys.stderr,\
-                "%s: bad source tarball %s, exiting." % (scriptname, ball)
-            print >> sys.stderr, "%s: SOURCE UNPACK FAILED" % scriptname
+                "%s: bad source tarball %s, exiting." % (self.main_scriptname, ball)
+            print >> sys.stderr, "%s: SOURCE UNPACK FAILED" % self.main_scriptname
             sys.exit(1)
         if not os.path.exists(self.packagename):
             raise IOError
@@ -1567,16 +1570,16 @@ def main():
     main_verify = False
     main_autoupdate = False
 
-    main_arch = "x86" if (platform.architecture()[0] == '32bit') else "x86_64"
-
     main_cygwin_p = (sys.platform == "cygwin")
     cas = CygAptSetup(main_cygwin_p)
     update_not_needed = ["ball", "find", "help", "purge", "remove", "version",\
         "filelist", "update", "setup", "md5", "show", "showpkg", "search"]
 
-    main_scriptname = os.path.basename(sys.argv[0])
+    #main_scriptname = os.path.basename(sys.argv[0])
+    main_scriptname = "cyg-apt"  # FIXME: better way
     if (main_scriptname[-3:] == ".py"):
         main_scriptname = main_scriptname[:-3]
+        
     try:
         (main_options, main_files) = getopt.getopt(sys.argv[1:],
             'adhm:t:xfsXyz', ('download', 'help', 'mirror=', 'dist=', 'no-deps',\
@@ -1621,7 +1624,7 @@ def main():
             main_nopostremove = True
     # Take most of our configuration from .cyg-apt 
     # preferring .cyg-apt in current directory over $(HOME)/.cyg-apt
-    cyg_apt_rc = None
+    main_cyg_apt_rc = None
     if "HOME" in os.environ:
         home_cyg_apt_rc = os.environ['HOME'] + '/.' + main_scriptname
     cwd_cyg_apt_rc = os.getcwd() + '/.' + main_scriptname
@@ -1635,7 +1638,7 @@ def main():
         # Command line options can override, but only for this run.
         main_cyg_apt_rc = main_cyg_apt_rc.replace("\\","/")
     elif (len(sys.argv) == 1 or sys.argv[1] != "setup"):
-        print "cyg-apt: no .cyg-apt: run \"cyg-apt setup\" Exiting."
+        print "cyg-apt: no .cyg-apt: run \"cyg-apt setup\". Exiting."
         sys.exit(1)
 
     if (main_command == "setup"):
@@ -1672,7 +1675,7 @@ def main():
                 main_dists,\
                 main_installed,\
                              main_scriptname,
-                             main_arch)
+                             sys_arch)
         except CygAptError, exp:
             print exp
             sys.exit(1)
