@@ -137,7 +137,7 @@ class CygAptSetup:
         # since cyg-apt is dependent on them
         self.barred = "python cygwin base-cygwin coreutils bash zlib libreadline gnupg"
         self.auto_update = False
-        self.arch = "x86"  #FIXME
+        self.arch = sys_arch  #FIXME
         
         if not self.cygwin_p:
             print >> sys.stderr, "%s: settup only supported under Cygwin. Exiting."\
@@ -579,10 +579,11 @@ class CygApt:
             sys.stderr.write('error: no such file \"%s\"\n' % self.installed_db)
             sys.stderr.write('error: run cyg-apt setup?\n' % vars())
             sys.exit(2)
-        elif not os.path.isfile(self.setup_ini):
-            sys.stderr.write('\n')
-            sys.stderr.write('error: no such file \"%s\"\n' % self.setup_ini)
-            sys.stderr.write('error: run cyg-apt setup?\n' % vars())
+        #elif not os.path.isfile(self.setup_ini):
+        #    sys.stderr.write('\n')
+        #    sys.stderr.write('error: no such file \"%s\"\n' % self.setup_ini)
+        #    sys.stderr.write('error: run cyg-apt setup?\n' % vars())
+        #    sys.exit(2)
         else:
             self._parse_setup_inis()
             self._parse_installed_db()
@@ -1033,6 +1034,9 @@ class CygApt:
         '''show detail info about package(s)'''
         self.show()
         
+        if not self.dists[self.distname].has_key(self.packagename):
+            return
+         
         package = self.dists[self.distname][self.packagename]
         for key in ['category', 'requires']:
             print "%s : %s" % (key, package.get(key, ''))
