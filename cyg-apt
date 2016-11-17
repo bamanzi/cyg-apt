@@ -1,22 +1,37 @@
 #!/usr/bin/python
 # -*- mode:python -*-
-'''
-  cyg-apt - a Cygwin package manager.
+'''cyg-apt - a Cygwin package manager.
   
   (c) 2002--2009 Chris Cormie         Jan Nieuwenhuizen
                  <cjcormie@gmail.com> <janneke@gnu.org> 
   
   License: GNU GPL
 
-  Hacked by Ba Manzi <bamanzi@gmail.com> 2012
+  Hacked by Ba Manzi <bamanzi@gmail.com> 2012-2016
+
   - disable gpg verifing by default
-  - disable automatically updating of setup.ini (rc & cmd option 'always_update'
-    changed to 'auto_update', and disabled by default). you can manually call
-    'cyg-apt update' to update them
-  - support multi-repos (e.g. Cygwin Ports). You need to add `mirrors' (in
-    python dictionary format) to ~/.cyg-apt, and it would overrides 'mirror' option
-    (but cmdline '--mirror' has higher priority).
-    Note: /etc/setup/setup.ini no longer used nor updated by this program.
+
+  - disable automatically updating of setup.ini
+
+    rc & cmd option 'always_update' changed to 'auto_update', and
+    disabled by default. you can manually call 'cyg-apt update' to
+    update them
+
+  - support multi-repos (e.g. Cygwin Ports).
+
+    You need to add `mirrors' (in python dictionary format) to
+    ~/.cyg-apt, and it would overrides 'mirror' option (but cmdline
+    '--mirror' has higher priority).  Note: /etc/setup/setup.ini no
+    longer used nor updated by this program.
+
+  - add support for different arch (x86 or x86_64)
+
+    required to work with repository later than Aug,2013. If you want
+    to install package from old repository, set it to empty string.
+
+  - add support for .xz tar ball
+
+  - add support for verification of sha256/sha512 hashes
 '''
 
 import getopt
@@ -32,15 +47,18 @@ import hashlib
 import shutil
 import inspect
 import bz2
-from pdb import set_trace as stra
+import platform
 
+#from pdb import set_trace as stra
+
+sys_arch = "x86" if (platform.architecture()[0] == '32bit') else "x86_64"
 
 class CygAptSetup:
     def __init__(self, cygwin_p):
         self.cygwin_p = cygwin_p
         self.rc_options = ['ROOT', 'mirror', 'cache', 'setup_ini', 'distname',\
             'barred', 'auto_update', 'arch']
-        self.rc_comments = {\
+        self.rc_comments = {
             "ROOT"     : "# The root of your Cygwin installation as a windows path\n",
             "mirror"   : "# URL of your Cygwin mirror: example "\
                 "http://mirror.internode.on.net/pub/cygwin/\n",
@@ -62,7 +80,8 @@ class CygAptSetup:
             "auto_update" : "# Auto update setup.ini before install any package (default: False).\n"\
                 "# IF set to False, you need to manually call 'cyg-apt update' to update setup.ini.\n",
             "arch" : "# x86 or x86_64, used to find the setup.ini and local cache folder. \n"\
-                "# required after 2013-07-22 (default: x86).\n"\
+                            "# required by repositories after 2013-07-22 (default: x86).\n"
+                            "# To work with old repository, set it to empty string.\n"
             }
         self.sn = os.path.basename(sys.argv[0])
         self.rc_regex = re.compile("^\s*(\w+)\s*=\s*(.*)\s*$")
@@ -118,7 +137,7 @@ class CygAptSetup:
         # since cyg-apt is dependent on them
         self.barred = "python cygwin base-cygwin coreutils bash zlib libreadline gnupg"
         self.auto_update = False
-        self.arch = "x86"  #FIXME
+        self.arch = sys_arch  #FIXME
         
         if not self.cygwin_p:
             print >> sys.stderr, "%s: settup only supported under Cygwin. Exiting."\
@@ -140,7 +159,7 @@ class CygAptSetup:
         cygwin_version = os.uname()[2][:3]
         self.setup_ini = self.config + "/setup.ini"
         self.cygwin_version = float(cygwin_version)
-        distname = "curr"
+
         h = open(self.cyg_apt_rc, "w")
         for i in self.rc_options:
             if i in self.rc_comments.keys():
@@ -157,7 +176,7 @@ class CygAptSetup:
             os.makedirs(self.config)
         if not os.path.isfile(installed_db):
             sys.stderr.write('creating %s\n' % installed_db)
-            installed = {0:{}}
+            self.installed = {0:{}}
             self.write_installed()
         #if not os.path.isfile(self.setup_ini):
         #    sys.stderr.write('getting %s\n' % self.setup_ini)
@@ -172,11 +191,11 @@ class CygAptSetup:
         for m in inspect.getmembers(CygAptSetup):
             if (type(m[1]) == type(self.usage)) and not m[0].startswith('_'):
                 if m[1].__doc__:
-                    print "    " + m[0] + " - " + m[1].__doc__        
+                    print "   %10s - %s " % (m[0], m[1].__doc__)
         for m in inspect.getmembers(CygApt):
             if (type(m[1]) == type(self.usage)) and not m[0].startswith('_'):
                 if m[1].__doc__:
-                    print "    " + m[0] + " - " + m[1].__doc__
+                    print "   %10s - %s " % (m[0], m[1].__doc__)
         sys.stdout.write(r'''
     Options:
         -d, --download          download only
@@ -217,6 +236,9 @@ class CygAptSetup:
             else:
                 mirrors = { 'offcial': rc["mirror"] }
 
+                
+        if not rc.has_key('arch'):
+            rc['arch'] = sys_arch
         arch = rc["arch"]
         for mirror_id, mirror in mirrors.items():
             downloads = os.path.join(pm.map_path(rc["cache"]), urllib.quote(mirror, '').lower(), arch)
@@ -258,7 +280,7 @@ class CygAptSetup:
 
             if verify:
                 sig_name = setup_ini_name + ".sig"
-                sig_url = os.path.join(mirror, sig_name)
+                sig_url = os.path.join(mirror, rc['arch'], sig_name)
                 err = uri_get(self.tmpdir, sig_url, verbose=True)
                 if err:
                     print >> sys.stderr,\
@@ -357,11 +379,11 @@ def uri_get(dir, uri, verbose=True):
         if verbose:
             print "\r%s: downloading: %s" % (scriptname, uri)
         try:
-            result = opener.retrieve\
-                (uri, url_base + ".tmp", reporthook = opener.dlProgress)
+            opener.retrieve(uri, url_base + ".tmp", reporthook = opener.dlProgress)
         except IOError,e:
             opener.errcode = 1
             err = e
+            
         if (opener.errcode == 200):
             rename(url_base + ".tmp", url_base)
             ret = 0
@@ -369,11 +391,13 @@ def uri_get(dir, uri, verbose=True):
             if os.path.exists(url_base + ".tmp"):
                 os.remove(url_base + ".tmp")
             os.chdir(old_cwd)
-            raise CygAptError("failed to download from %s: %s" % (uri, err))
+            if verbose:
+                 print("failed to download from %s: [errcode=%s]: %s" % (uri, opener.errcode, err))
         os.chdir(old_cwd)
+        ret = opener.errcode
     else:
-        raise CygAptError("bad URL %s" % uri)
-        
+        raise CygAptError("unsupported URL scheme %s: %s" % (up.scheme, uri))
+    return ret    
 
 def prsort(lst):
     lst.sort()
@@ -490,7 +514,9 @@ class CygApt:
         main_nopostremove,\
         main_dists,\
         main_installed,\
-        main_scriptname):
+        main_scriptname,\
+        main_arch):
+
         
         # Define constants
         self.installed_db_magic = 'INSTALLED.DB 2\n'
@@ -520,9 +546,9 @@ class CygApt:
         self.dists = main_dists
         self.installed = main_installed
         self.cyg_apt_rc = main_cyg_apt_rc
+        self.arch = main_arch
         self.mirror = ''
         self.mirrors = {}
-        self.arch = "x86"
         
         # Read in our configuration
         self.get_rc(open(self.cyg_apt_rc))
@@ -551,11 +577,16 @@ class CygApt:
         if (main_distname):
             self.distname = main_distname
 
-        if not (os.path.isfile(self.installed_db) or os.path.isfile(self.setup_ini)):
+        if not os.path.isfile(self.installed_db):
             sys.stderr.write('\n')
-            sys.stderr.write('error: \"%s\" no such file\n' % i)
+            sys.stderr.write('error: no such file \"%s\"\n' % self.installed_db)
             sys.stderr.write('error: run cyg-apt setup?\n' % vars())
             sys.exit(2)
+        #elif not os.path.isfile(self.setup_ini):
+        #    sys.stderr.write('\n')
+        #    sys.stderr.write('error: no such file \"%s\"\n' % self.setup_ini)
+        #    sys.stderr.write('error: run cyg-apt setup?\n' % vars())
+        #    sys.exit(2)
         else:
             self._parse_setup_inis()
             self._parse_installed_db()
@@ -734,10 +765,8 @@ class CygApt:
                 os.makedirs(dir)
             status = uri_get(dir, '%s/%s' % (self.mirrors[mirror_id], install))
             if status:
-                sys.stderr.write("\n%s: didn't find %s on mirror %s: " \
-                                     "possible mismatch between setup.ini and "\
-                                     "mirror requiring %s update?"\
-                                     % (self.sn, self.packagename, self.mirrors[mirror_id], self.sn))
+                sys.stderr.write("\n%s: failed to download %s from mirror %s: errcode=%s"
+                                     % (self.sn, self.packagename, self.mirrors[mirror_id], status))
                 sys.exit(1)
                     
 
@@ -926,6 +955,10 @@ class CygApt:
         install, md5, mirror_id = self._get_url()
         f = file("%s/%s" % (self.downloads[mirror_id], install),"rb").read()
         m = hashlib.md5()
+        if 64 == len(md5):
+            m = hashlib.sha256()
+        elif 128 == len(md5):
+            m = hashlib.sha512()
         m.update(f)
         digest = m.hexdigest()
         return digest
@@ -999,9 +1032,12 @@ class CygApt:
             print "%s: not found in setup.ini: %s" % (self.sn, s)
 
     def showpkg(self):
-        ''' show detail info '''
+        '''show detail info about package(s)'''
         self.show()
         
+        if not self.dists[self.distname].has_key(self.packagename):
+            return
+         
         package = self.dists[self.distname][self.packagename]
         for key in ['category', 'requires']:
             print "%s : %s" % (key, package.get(key, ''))
@@ -1075,7 +1111,7 @@ class CygApt:
         members = tf.getmembers()
         tempdir = os.path.basename(tf.name) + "-tmp"
         tempdir = tempdir.replace(".tar.bz2","")
-        tempdir = tempdir.replace(".tar.xz","")        
+        tempdir = tempdir.replace(".tar.xz","")
         if os.path.exists(tempdir):
             print >> sys.stderr,\
             "%s: tmpdir %s exists, won't overwrite.\nInstall "\
@@ -1404,7 +1440,7 @@ class CygApt:
     def do_unpack(self):
         ball = self._get_ball()
         basename = os.path.basename(ball)
-        self.packagename = re.sub('(-src)*\.tar\.(bz2|xz|gz)', '', basename)
+        self.packagename = re.sub('(-src)*\.tar\.(bz2|xz|gz)', '', basename)  #FIXME: xz support (module `tarfile' doesn't support it)
         if os.path.exists(self.packagename):
             self.printerr(self.packagename + " already exists. Not overwriting.\n")
             return 1       
@@ -1412,11 +1448,11 @@ class CygApt:
         if tarfile.is_tarfile(ball):
             tf = tarfile.open(ball)
             tf.extractall(self.packagename)
-            lst = tf.getnames()
+            #lst = tf.getnames()
         else:
             print >> sys.stderr,\
-                "%s: bad source tarball %s, exiting." % (scriptname, ball)
-            print >> sys.stderr, "%s: SOURCE UNPACK FAILED" % scriptname
+                "%s: bad source tarball %s, exiting." % (self.main_scriptname, ball)
+            print >> sys.stderr, "%s: SOURCE UNPACK FAILED" % self.main_scriptname
             sys.exit(1)
         if not os.path.exists(self.packagename):
             raise IOError
@@ -1538,15 +1574,17 @@ def main():
     home_cyg_apt_rc = None
     main_verify = False
     main_autoupdate = False
-    
+
     main_cygwin_p = (sys.platform == "cygwin")
     cas = CygAptSetup(main_cygwin_p)
     update_not_needed = ["ball", "find", "help", "purge", "remove", "version",\
         "filelist", "update", "setup", "md5", "show", "showpkg", "search"]
 
-    main_scriptname = os.path.basename(sys.argv[0])
+    #main_scriptname = os.path.basename(sys.argv[0])
+    main_scriptname = "cyg-apt"  # FIXME: better way ?
     if (main_scriptname[-3:] == ".py"):
         main_scriptname = main_scriptname[:-3]
+        
     try:
         (main_options, main_files) = getopt.getopt(sys.argv[1:],
             'adhm:t:xfsXyz', ('download', 'help', 'mirror=', 'dist=', 'no-deps',\
@@ -1591,7 +1629,7 @@ def main():
             main_nopostremove = True
     # Take most of our configuration from .cyg-apt 
     # preferring .cyg-apt in current directory over $(HOME)/.cyg-apt
-    cyg_apt_rc = None
+    main_cyg_apt_rc = None
     if "HOME" in os.environ:
         home_cyg_apt_rc = os.environ['HOME'] + '/.' + main_scriptname
     cwd_cyg_apt_rc = os.getcwd() + '/.' + main_scriptname
@@ -1605,7 +1643,7 @@ def main():
         # Command line options can override, but only for this run.
         main_cyg_apt_rc = main_cyg_apt_rc.replace("\\","/")
     elif (len(sys.argv) == 1 or sys.argv[1] != "setup"):
-        print "cyg-apt: no .cyg-apt: run \"cyg-apt setup\" Exiting."
+        print "cyg-apt: no .cyg-apt: run \"cyg-apt setup\". Exiting."
         sys.exit(1)
 
     if (main_command == "setup"):
@@ -1641,7 +1679,8 @@ def main():
                 main_nopostremove,\
                 main_dists,\
                 main_installed,\
-                main_scriptname)
+                             main_scriptname,
+                             sys_arch)
         except CygAptError, exp:
             print exp
             sys.exit(1)
