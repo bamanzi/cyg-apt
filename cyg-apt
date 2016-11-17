@@ -385,16 +385,16 @@ def uri_get(dir, uri, verbose=True):
             err = e
             
         if (opener.errcode == 200):
-            rename(url_base + ".tmp", url_base)
             ret = 0
+            rename(url_base + ".tmp", url_base)
         else:
+            ret = opener.errcode
             if os.path.exists(url_base + ".tmp"):
                 os.remove(url_base + ".tmp")
             os.chdir(old_cwd)
             if verbose:
                  print("failed to download from %s: [errcode=%s]: %s" % (uri, opener.errcode, err))
         os.chdir(old_cwd)
-        ret = opener.errcode
     else:
         raise CygAptError("unsupported URL scheme %s: %s" % (up.scheme, uri))
     return ret    
